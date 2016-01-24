@@ -8,79 +8,108 @@ import java.lang.invoke.SerializedLambda;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Created by Mark on 1/24/2016.
  */
 public final class SynchronousLambus implements Lambus {
-    private final Map<Class<? extends Event>, List<Link<?>>> classLinkMap= new HashMap<>();
+    private final Map<Class<? extends Event>, List<Link<?>>> classLinkMap= new ConcurrentHashMap<>();
 
     @Override
     public boolean subscribe(Class<? extends Event> e, Object o) {
+        Objects.requireNonNull(o);
+        boolean added = false;
         for (final Field field : o.getClass().getDeclaredFields()) {
             if (field.getType().equals(Link.class)) {
                 try {
                     field.setAccessible(true);
                     final Link<?> link = (Link<?>) field.get(o);
-                    @SuppressWarnings("unchecked")
-                    final Class<? extends Event> reifiedClass = (Class<? extends Event>) getLambdaMethod(getSerializedLambda(link)).getParameterTypes()[0];
-                    if (reifiedClass.equals(e))
+                    final Class<? extends Event> reifiedClass = getLambdaTarget(link);
+                    if (reifiedClass.equals(e)) {
                         this.classLinkMap.computeIfAbsent(reifiedClass, l -> new ArrayList<>()).add(link);
-                } catch (IllegalAccessException ex) {
+                        added = true;
+                    }
+                } catch (IllegalAccessException | SecurityException ex) {
                     ex.printStackTrace();
-                    return false;
                 }
             }
         }
-        return true;
+        return added;
+    }
+
+    @Override
+    public <T extends Event> Link<T> subscribeDirect(Link<T> link) {
+        final Class<? extends Event> reifiedClass = getLambdaTarget(link);
+        this.classLinkMap.computeIfAbsent(reifiedClass, l -> new ArrayList<>()).add(link);
+        return link;
     }
 
     @Override
     public boolean subscribeAll(Object o) {
+        Objects.requireNonNull(o);
+        boolean added = false;
         for (final Field field : o.getClass().getDeclaredFields()) {
             if (field.getType().equals(Link.class)) {
                 try {
                     field.setAccessible(true);
                     final Link<?> link = (Link<?>) field.get(o);
-                    @SuppressWarnings("unchecked")
-                    final Class<? extends Event> reifiedClass = (Class<? extends Event>) getLambdaMethod(getSerializedLambda(link)).getParameterTypes()[0];
+                    final Class<? extends Event> reifiedClass = getLambdaTarget(link);
                     this.classLinkMap.computeIfAbsent(reifiedClass, l -> new ArrayList<>()).add(link);
-                } catch (IllegalAccessException ex) {
+                    added = true;
+                } catch (IllegalAccessException | SecurityException ex) {
                     ex.printStackTrace();
-                    return false;
                 }
             }
         }
-        return true;
+        return added;
     }
 
     @Override
     public boolean unsubscribeAll(Object o) {
+        Objects.requireNonNull(o);
+        boolean removed = false;
         for (final Field field : o.getClass().getDeclaredFields()) {
             if (field.getType().equals(Link.class)) {
                 try {
                     field.setAccessible(true);
-                    final Link<?> link = (Link<?>) field.get(o);
-                    @SuppressWarnings("unchecked")
-                    final Class<? extends Event> reifiedClass = (Class<? extends Event>) getLambdaMethod(getSerializedLambda(link)).getParameterTypes()[0];
-                    this.classLinkMap.remove(reifiedClass);
-                } catch (IllegalAccessException ex) {
+                    removed |= unsubscribeDirect((Link<?>) field.get(o));
+                } catch (IllegalAccessException | SecurityException ex) {
                     ex.printStackTrace();
                     return false;
                 }
             }
         }
-        return true;
+        return removed;
+    }
+
+    @Override
+    public boolean unsubscribeDirect(Link<?> link) {
+        boolean removed = false;
+        final Class<? extends Event> reifiedClass = getLambdaTarget(link);
+        for (ListIterator<Link<?>> li = classLinkMap.getOrDefault(reifiedClass, Collections.emptyList()).listIterator(); li.hasNext();) {
+            if (li.next() == link) {
+                li.remove();
+                removed = true;
+            }
+        }
+        return removed;
     }
 
     @Override
     public <T extends Event> T post(T event) {
+        Objects.requireNonNull(event);
         for (Link<?> link : this.classLinkMap.getOrDefault(event.getClass(), Collections.emptyList())) {
             @SuppressWarnings("unchecked")
             final Link<T> castLink = (Link<T>) link;
             castLink.invoke(event);
         }
         return event;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Event> Class<T> getLambdaTarget(Link<T> link) {
+        return (Class<T>) getLambdaMethod(getSerializedLambda(link)).getParameterTypes()[0];
     }
 
     private static SerializedLambda getSerializedLambda(Object function) {
