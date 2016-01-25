@@ -1,7 +1,8 @@
-import me.foundry.lambus.Event;
 import me.foundry.lambus.Lambus;
 import me.foundry.lambus.Link;
 import me.foundry.lambus.internal.SynchronousLambus;
+import me.foundry.lambus.priority.Prioritized;
+import me.foundry.lambus.priority.Priority;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
@@ -13,10 +14,8 @@ public class EventTester {
     private final ThreadMXBean bean = ManagementFactory.getThreadMXBean();
     private final Lambus bus = new SynchronousLambus();
 
-    private Link<BasicEvent> onBasicEvent = (e) -> {};
-
     public void testDispatchTime() {
-        bus.subscribeAll(this);
+        Link<BasicEvent> link = bus.subscribeDirect((BasicEvent e) -> {});
         final long last = bean.getCurrentThreadCpuTime();
 
         for (int i = 0; i < 100000000; i++) {
@@ -24,17 +23,29 @@ public class EventTester {
         }
 
         final long current = bean.getCurrentThreadCpuTime() - last;
-        bus.unsubscribeAll(this);
+        bus.unsubscribeDirect(link);
 
         System.out.println(current);
     }
 
-    public void testInlineDispatch() {
-        Link<?> l = bus.subscribeDirect((BasicEvent e) -> System.out.println(e.getClass().getName()));
-        bus.post(new BasicEvent());
+    @Prioritized(Priority.LOWEST)
+    private Link<BasicEvent> onBasicEventLow = (e) -> {
+        System.out.println("Low Priority!");
+    };
 
-        bus.unsubscribeDirect(l);
+    private Link<BasicEvent> onBasicEventNormal = (e) -> {
+        System.out.println("Normal Priority");
+    };
+
+    @Prioritized(Priority.HIGHEST)
+    private Link<BasicEvent> onBasicEventHigh = (e) -> {
+        System.out.println("High Priority");
+    };
+
+    public void testPriorityHandling() {
+        bus.subscribeAll(this);
         bus.post(new BasicEvent());
+        bus.unsubscribeAll(this);
     }
 
 }
