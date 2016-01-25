@@ -1,5 +1,7 @@
 package me.foundry.lambus;
 
+import me.foundry.lambus.event.Event;
+
 import java.io.Serializable;
 
 /**
