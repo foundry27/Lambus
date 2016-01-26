@@ -59,4 +59,11 @@ public class EventTester {
 
     }
 
+    public void testUnsubscription() {
+        bus.subscribeAll(this);
+        bus.post(new BasicEvent());
+        bus.unsubscribeAll(this);
+        bus.post(new BasicEvent());
+    }
+
 }
