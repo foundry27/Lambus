@@ -8,5 +8,13 @@ public enum Priority {
     HIGH,
     NORMAL,
     LOW,
-    LOWEST
+    LOWEST;
+
+    public static final Priority[] fromOrdinal = new Priority[] {
+            HIGHEST,
+            HIGH,
+            NORMAL,
+            LOW,
+            LOWEST
+    };
 }

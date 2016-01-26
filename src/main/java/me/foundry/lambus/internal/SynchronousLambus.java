@@ -13,6 +13,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.PriorityBlockingQueue;
 
 /**
  * Created by Mark on 1/24/2016.
@@ -91,6 +92,7 @@ public final class SynchronousLambus implements Lambus {
                 try {
                     field.setAccessible(true);
                     removed |= unsubscribeDirect((Link<?>) field.get(o));
+//                    TODO: Only try to iterate through the sublist corresponding to the priority of the Link
                 } catch (IllegalAccessException | SecurityException ex) {
                     ex.printStackTrace();
                     return false;
@@ -178,7 +180,7 @@ public final class SynchronousLambus implements Lambus {
                     return (SerializedLambda) serializedForm;
             }
             catch (NoSuchMethodError e) {
-                // fall through the loop and try the next class
+                /* fall through the loop and try the next class */
             }
             catch (Throwable t) {
                 throw new RuntimeException("Error while extracting serialized lambda", t);
@@ -247,8 +249,11 @@ public final class SynchronousLambus implements Lambus {
     }
 
     static class PriorityLinkDataList implements Iterable<LinkData> {
-//        TODO: Concurrent modification protection, have markers for where iteration should begin and end for efficiency
+//        TODO: Concurrent modification protection
         public static PriorityLinkDataList EMPTY = new PriorityLinkDataList();
+
+        Priority lowPriority, highPriority;
+
         final SubList[] priorityLists = new SubList[] {
                 new SubList(), //HIGHEST
                 new SubList(), //HIGH
@@ -264,6 +269,18 @@ public final class SynchronousLambus implements Lambus {
             priorityLists[index].head.previous.next = priorityLists[index].head;
             priorityLists[index].head.previous.previous = prev;
             prev.next = priorityLists[index].head.previous;
+            if (lowPriority == null) {
+                /* both must be null */
+                lowPriority = highPriority = link.getPriority();
+            }
+            else {
+                if (link.getPriority().ordinal() > lowPriority.ordinal()) {
+                    lowPriority = link.getPriority();
+                }
+                else if (link.getPriority().ordinal() < highPriority.ordinal()) {
+                    highPriority = link.getPriority();
+                }
+            }
         }
 
         @Override
@@ -288,13 +305,14 @@ public final class SynchronousLambus implements Lambus {
         }
 
         class LinkDataIterator implements Iterator<LinkData> {
-            int priorityIndex = Priority.HIGHEST.ordinal();
+            int priorityIndex = highPriority != null ? highPriority.ordinal() : Priority.HIGHEST.ordinal();
             SubList currentList = priorityLists[priorityIndex];
             LinkedLink currentLink = currentList.tail.next;
 
             @Override
             public boolean hasNext() {
-                if (currentLink == currentList.head && priorityIndex != priorityLists.length - 1) {
+                if (lowPriority == null) return false;
+                if (currentLink == currentList.head && priorityIndex != lowPriority.ordinal()) {
                     currentList = priorityLists[++priorityIndex];
                     currentLink = currentList.tail.next;
                     return hasNext();
@@ -316,6 +334,27 @@ public final class SynchronousLambus implements Lambus {
                 final LinkedLink prev = currentLink.previous;
                 prev.previous.next = currentLink;
                 currentLink.previous = prev.previous;
+                if (currentList.tail.next == currentList.head) {
+                    /* no more Links of that priority */
+
+                    Priority newPriority = null;
+                    if (prev.data.getPriority().ordinal() == lowPriority.ordinal()) {
+                        for (int i = lowPriority.ordinal() - 1; i > highPriority.ordinal(); i--) {
+                            if (priorityLists[i].tail.next != priorityLists[i].head)
+                                newPriority = Priority.fromOrdinal[i];
+                            priorityIndex = i;
+                        }
+                        lowPriority = newPriority == null ? highPriority = null : newPriority;
+                    }
+                    else if (prev.data.getPriority().ordinal() == highPriority.ordinal()) {
+                        for (int i = highPriority.ordinal() + 1; i < lowPriority.ordinal(); i++) {
+                            if (priorityLists[i].tail.next != priorityLists[i].head)
+                                newPriority = Priority.fromOrdinal[i];
+                            priorityIndex = i;
+                        }
+                        highPriority = newPriority == null ? lowPriority = null : newPriority;
+                    }
+                }
             }
         }
     }
