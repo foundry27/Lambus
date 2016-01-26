@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Created by Mark on 1/24/2016.
  */
 public final class SynchronousLambus implements Lambus {
-    private final Map<Class<? extends Event>, List<LinkData<? extends Event>>> classLinkMap = new ConcurrentHashMap<>();
+    private final Map<Class<? extends Event>, PriorityLinkDataList> classLinkMap = new ConcurrentHashMap<>();
 
     /*
     Public Methods
@@ -34,13 +34,12 @@ public final class SynchronousLambus implements Lambus {
                     final Link<?> link = (Link<?>) field.get(o);
                     final Class<? extends Event> reifiedClass = getLambdaTarget(link);
                     if (reifiedClass.equals(e)) {
-                        final List<LinkData<? extends Event>> eventLinks = this.classLinkMap.computeIfAbsent(reifiedClass, l -> new ArrayList<>());
-                        eventLinks.add(new LinkData<>(
+                        this.classLinkMap.computeIfAbsent(reifiedClass, l -> new PriorityLinkDataList()).add(new LinkData<>(
                                 link,
                                 reifiedClass,
                                 findPriority(field),
-                                findFilters(field)));
-                        Collections.sort(eventLinks);
+                                findFilters(field))
+                        );
                         added = true;
                     }
                 } catch (IllegalAccessException | SecurityException ex) {
@@ -54,7 +53,7 @@ public final class SynchronousLambus implements Lambus {
     @Override
     public <T extends Event> Link<T> subscribeDirect(Link<T> link) {
         final Class<? extends Event> reifiedClass = getLambdaTarget(link);
-        this.classLinkMap.computeIfAbsent(reifiedClass, l -> new ArrayList<>()).add(new LinkData<>(link, reifiedClass, Priority.NORMAL, null));
+        this.classLinkMap.computeIfAbsent(reifiedClass, l -> new PriorityLinkDataList()).add(new LinkData<>(link, reifiedClass, Priority.NORMAL, null));
         return link;
     }
 
@@ -68,13 +67,12 @@ public final class SynchronousLambus implements Lambus {
                     field.setAccessible(true);
                     final Link<?> link = (Link<?>) field.get(o);
                     final Class<? extends Event> reifiedClass = getLambdaTarget(link);
-                    final List<LinkData<? extends Event>> eventLinks = this.classLinkMap.computeIfAbsent(reifiedClass, l -> new ArrayList<>());
-                    eventLinks.add(new LinkData<>(
+                    this.classLinkMap.computeIfAbsent(reifiedClass, l -> new PriorityLinkDataList()).add(new LinkData<>(
                             link,
                             reifiedClass,
                             findPriority(field),
-                            findFilters(field)));
-                    Collections.sort(eventLinks);
+                            findFilters(field))
+                    );
                     added = true;
                 } catch (IllegalAccessException | SecurityException ex) {
                     ex.printStackTrace();
@@ -106,9 +104,9 @@ public final class SynchronousLambus implements Lambus {
     public boolean unsubscribeDirect(Link<?> link) {
         boolean removed = false;
         final Class<? extends Event> reifiedClass = getLambdaTarget(link);
-        for (ListIterator<LinkData<? extends Event>> li = classLinkMap.getOrDefault(reifiedClass, Collections.emptyList()).listIterator(); li.hasNext();) {
-            if (li.next().getLink() == link) {
-                li.remove();
+        for (Iterator<LinkData> it = classLinkMap.getOrDefault(reifiedClass, PriorityLinkDataList.EMPTY).iterator(); it.hasNext();) {
+            if (it.next().getLink() == link) {
+                it.remove();
                 removed = true;
             }
         }
@@ -119,7 +117,7 @@ public final class SynchronousLambus implements Lambus {
     @SuppressWarnings("unchecked")
     public <T extends Event> T post(T event) {
         Objects.requireNonNull(event);
-        for (LinkData<? extends Event> link : this.classLinkMap.getOrDefault(event.getClass(), Collections.emptyList())) {
+        for (LinkData<? extends Event> link : this.classLinkMap.getOrDefault(event.getClass(), PriorityLinkDataList.EMPTY)) {
             final Link<T> castLink = (Link<T>) link.getLink();
             if (link.getFilters() != null) {
                 for (Filter<T> f : link.getFilters()) {
@@ -245,6 +243,80 @@ public final class SynchronousLambus implements Lambus {
         @Override
         public int compareTo(LinkData o) {
             return Priority.HIGHEST.ordinal() - o.getPriority().ordinal();
+        }
+    }
+
+    static class PriorityLinkDataList implements Iterable<LinkData> {
+//        TODO: Concurrent modification protection, have markers for where iteration should begin and end for efficiency
+        public static PriorityLinkDataList EMPTY = new PriorityLinkDataList();
+        final SubList[] priorityLists = new SubList[] {
+                new SubList(), //HIGHEST
+                new SubList(), //HIGH
+                new SubList(), //NORMAL
+                new SubList(), //LOW
+                new SubList()  //LOWEST
+        };
+
+        public void add(LinkData link) {
+            final int index = link.getPriority().ordinal();
+            final LinkedLink prev = priorityLists[index].head.previous;
+            priorityLists[index].head.previous = new LinkedLink(link);
+            priorityLists[index].head.previous.next = priorityLists[index].head;
+            priorityLists[index].head.previous.previous = prev;
+            prev.next = priorityLists[index].head.previous;
+        }
+
+        @Override
+        public Iterator<LinkData> iterator() {
+            return new LinkDataIterator();
+        }
+
+        static class LinkedLink {
+            LinkedLink next, previous;
+            final LinkData data;
+            public LinkedLink(LinkData link) {
+                this.data = link;
+            }
+        }
+
+        static class SubList {
+            final LinkedLink tail = new LinkedLink(null), head = new LinkedLink(null);
+            public SubList() {
+                this.tail.next = this.head;
+                this.head.previous = this.tail;
+            }
+        }
+
+        class LinkDataIterator implements Iterator<LinkData> {
+            int priorityIndex = Priority.HIGHEST.ordinal();
+            SubList currentList = priorityLists[priorityIndex];
+            LinkedLink currentLink = currentList.tail.next;
+
+            @Override
+            public boolean hasNext() {
+                if (currentLink == currentList.head && priorityIndex != priorityLists.length - 1) {
+                    currentList = priorityLists[++priorityIndex];
+                    currentLink = currentList.tail.next;
+                    return hasNext();
+                }
+                else {
+                    return currentLink != currentList.head;
+                }
+            }
+
+            @Override
+            public LinkData next() {
+                final LinkedLink result = currentLink;
+                currentLink = currentLink.next;
+                return result.data;
+            }
+
+            @Override
+            public void remove() {
+                final LinkedLink prev = currentLink.previous;
+                prev.previous.next = currentLink;
+                currentLink.previous = prev.previous;
+            }
         }
     }
 
