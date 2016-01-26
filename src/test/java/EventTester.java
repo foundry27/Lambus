@@ -48,4 +48,15 @@ public class EventTester {
         bus.unsubscribeAll(this);
     }
 
+    public void testSubscriptionTime() {
+        long last = bean.getCurrentThreadCpuTime();
+        for (int i = 0; i < 1000000; i++) {
+            bus.subscribeAll(this);
+        }
+        final long current = bean.getCurrentThreadCpuTime() - last;
+        bus.unsubscribeAll(this);
+        System.out.println(current);
+
+    }
+
 }
