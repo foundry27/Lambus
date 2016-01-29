@@ -1,8 +1,9 @@
 package me.foundry.lambus.priority;
 
 /**
- * Created by Mark on 1/25/2016.
+ * @author Mark Johnson
  */
+
 public enum Priority {
     HIGHEST,
     HIGH,

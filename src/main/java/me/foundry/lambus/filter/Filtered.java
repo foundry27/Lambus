@@ -1,13 +1,11 @@
 package me.foundry.lambus.filter;
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+import java.lang.annotation.*;
 
 /**
- * Created by Mark on 1/24/2016.
+ * @author Mark Johnson
  */
+
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.FIELD})
 public @interface Filtered {
