@@ -5,8 +5,8 @@
 public class Main {
     public static void main(String[] args) {
         final EventTester et = new EventTester();
-        et.testDispatchTime();
-        //et.testPriorityHandling();
+        //et.testDispatchTime();
+        et.testPriorityHandling();
         //et.testSubscriptionTime();
         //et.testUnsubscription();
     }

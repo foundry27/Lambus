@@ -6,8 +6,9 @@ import me.foundry.lambus.event.Event;
 import java.util.function.BiPredicate;
 
 /**
- * Created by Mark on 1/24/2016.
+ * @author Mark Johnson
  */
+
 public interface Filter<T extends Event> extends BiPredicate<Link<T>, T> {
     @Override
     boolean test(Link<T> link, T event);

@@ -1,7 +1,8 @@
 package me.foundry.lambus.event;
 
 /**
- * Created by Mark on 1/24/2016.
+ * @author Mark Johnson
  */
-public class Event {
+
+public abstract class Event {
 }

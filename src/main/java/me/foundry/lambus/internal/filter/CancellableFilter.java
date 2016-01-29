@@ -6,8 +6,9 @@ import me.foundry.lambus.event.Event;
 import me.foundry.lambus.filter.Filter;
 
 /**
- * Created by Mark on 1/24/2016.
+ * @author Mark Johnson
  */
+
 public class CancellableFilter<T extends Event & Cancellable> implements Filter<T> {
     @Override
     public boolean test(Link<T> link, T event) {

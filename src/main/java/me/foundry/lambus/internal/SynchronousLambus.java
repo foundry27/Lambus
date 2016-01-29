@@ -17,8 +17,9 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Created by Mark on 1/24/2016.
+ * @author Mark Johnson
  */
+
 public final class SynchronousLambus implements Lambus {
     private final Map<Class<? extends Event>, PriorityLinkDataList> classLinkMap = new HashMap<>();
 
@@ -53,10 +54,56 @@ public final class SynchronousLambus implements Lambus {
     }
 
     @Override
+    public boolean unsubscribe(Class<? extends Event> e, Object o) {
+        Objects.requireNonNull(o);
+        boolean removed = false;
+        for (final Field field : o.getClass().getDeclaredFields()) {
+            if (field.getType().equals(Link.class)) {
+                try {
+                    field.setAccessible(true);
+                    final Link<?> link = (Link<?>) field.get(o);
+                    final Class<? extends Event> reifiedClass = getLambdaTarget(link);
+                    if (reifiedClass.equals(e)) {
+                        for (Iterator<LinkData> it = classLinkMap.getOrDefault(reifiedClass, PriorityLinkDataList.EMPTY).iterator(); it.hasNext(); ) {
+                            if (it.next().getLink() == link) {
+                                it.remove();
+                                removed = true;
+                            }
+                        }
+//                        TODO: Only iterate through the sublist corresponding to each field's priority
+                    }
+                } catch (IllegalAccessException | SecurityException ex) {
+                    ex.printStackTrace();
+                    return false;
+                }
+            }
+        }
+        return removed;
+    }
+
+    @Override
     public <T extends Event> Link<T> subscribeDirect(Link<T> link) {
         final Class<? extends Event> reifiedClass = getLambdaTarget(link);
-        this.classLinkMap.computeIfAbsent(reifiedClass, l -> new PriorityLinkDataList()).add(new LinkData<>(link, reifiedClass, Priority.NORMAL, null));
+        this.classLinkMap.computeIfAbsent(reifiedClass, l -> new PriorityLinkDataList()).add(new LinkData<>(
+                link,
+                reifiedClass,
+                Priority.NORMAL,
+                null)
+        );
         return link;
+    }
+
+    @Override
+    public boolean unsubscribeDirect(Link<?> link) {
+        boolean removed = false;
+        final Class<? extends Event> reifiedClass = getLambdaTarget(link);
+        for (Iterator<LinkData> it = classLinkMap.getOrDefault(reifiedClass, PriorityLinkDataList.EMPTY).iterator(); it.hasNext();) {
+            if (it.next().getLink() == link) {
+                it.remove();
+                removed = true;
+            }
+        }
+        return removed;
     }
 
     @Override
@@ -93,24 +140,11 @@ public final class SynchronousLambus implements Lambus {
                 try {
                     field.setAccessible(true);
                     removed |= unsubscribeDirect((Link<?>) field.get(o));
-//                    TODO: Only try to iterate through the sublist corresponding to the priority of the Link
+//                    TODO: Only iterate through the sublist corresponding to each field's priority
                 } catch (IllegalAccessException | SecurityException ex) {
                     ex.printStackTrace();
                     return false;
                 }
-            }
-        }
-        return removed;
-    }
-
-    @Override
-    public boolean unsubscribeDirect(Link<?> link) {
-        boolean removed = false;
-        final Class<? extends Event> reifiedClass = getLambdaTarget(link);
-        for (Iterator<LinkData> it = classLinkMap.getOrDefault(reifiedClass, PriorityLinkDataList.EMPTY).iterator(); it.hasNext();) {
-            if (it.next().getLink() == link) {
-                it.remove();
-                removed = true;
             }
         }
         return removed;
@@ -124,9 +158,7 @@ public final class SynchronousLambus implements Lambus {
             final Link<T> castLink = (Link<T>) link.getLink();
             if (link.getFilters() != null) {
                 for (Filter<T> f : link.getFilters()) {
-                    if (!f.test(castLink, event)) {
-                        return event;
-                    }
+                    if (!f.test(castLink, event)) return event;
                 }
             }
             castLink.invoke(event);
@@ -187,7 +219,6 @@ public final class SynchronousLambus implements Lambus {
                 throw new RuntimeException("Error while extracting serialized lambda", t);
             }
         }
-
         throw new RuntimeException("writeReplace method not found");
     }
 
@@ -199,7 +230,6 @@ public final class SynchronousLambus implements Lambus {
             e.printStackTrace();
             throw new RuntimeException("Unable to instantiate lambda class");
         }
-
         final String lambdaName = lambda.getImplMethodName();
 
         for (Method m : implClass.getDeclaredMethods()) {
@@ -207,7 +237,6 @@ public final class SynchronousLambus implements Lambus {
                 return m;
             }
         }
-
         throw new RuntimeException("Lambda Method not found");
     }
 
@@ -250,7 +279,7 @@ public final class SynchronousLambus implements Lambus {
     }
 
     static class PriorityLinkDataList implements Iterable<LinkData> {
-//        TODO: Implement as a lock-free concurrent linked list
+//        TODO: Implement as a lock-free thread-safe linked list
         public static PriorityLinkDataList EMPTY = new PriorityLinkDataList();
 
         Priority lowPriority, highPriority;
@@ -340,17 +369,19 @@ public final class SynchronousLambus implements Lambus {
                     Priority newPriority = null;
                     if (prev.data.getPriority().ordinal() == lowPriority.ordinal()) {
                         for (int i = lowPriority.ordinal() - 1; i > highPriority.ordinal(); i--) {
-                            if (priorityLists[i].head.next != priorityLists[i].tail)
+                            if (priorityLists[i].head.next != priorityLists[i].tail) {
                                 newPriority = Priority.fromOrdinal[i];
-                            priorityIndex = i;
+                                priorityIndex = i;
+                            }
                         }
                         lowPriority = newPriority == null ? highPriority = null : newPriority;
                     }
                     else if (prev.data.getPriority().ordinal() == highPriority.ordinal()) {
                         for (int i = highPriority.ordinal() + 1; i < lowPriority.ordinal(); i++) {
-                            if (priorityLists[i].head.next != priorityLists[i].tail)
+                            if (priorityLists[i].head.next != priorityLists[i].tail) {
                                 newPriority = Priority.fromOrdinal[i];
-                            priorityIndex = i;
+                                priorityIndex = i;
+                            }
                         }
                         highPriority = newPriority == null ? lowPriority = null : newPriority;
                     }
