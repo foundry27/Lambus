@@ -1,43 +1,41 @@
 package me.foundry.lambus.internal;
 
 import me.foundry.lambus.Lambus;
-import me.foundry.lambus.Link;
+import me.foundry.lambus.Subscribed;
+import me.foundry.lambus.Subscriber;
 import me.foundry.lambus.event.Event;
 import me.foundry.lambus.filter.Filter;
 import me.foundry.lambus.filter.Filtered;
 import me.foundry.lambus.internal.util.LambdaUtils;
+import me.foundry.lambus.internal.util.SubscriberList;
 import me.foundry.lambus.priority.Prioritized;
 import me.foundry.lambus.priority.Priority;
 
 import java.lang.reflect.Field;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Queue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.PriorityBlockingQueue;
 
 /**
  * @author Mark Johnson
  */
 
 public final class LambusImpl implements Lambus {
-    private final ConcurrentMap<Class<? extends Event>, BlockingQueue<LinkData>> classLinkMap = new ConcurrentHashMap<>();
+    private final ConcurrentMap<Class<? extends Event>, SubscriberList> classsubMap = new ConcurrentHashMap<>();
 
     @Override
     public boolean subscribe(Class<? extends Event> e, Object o) {
         Objects.requireNonNull(o);
         boolean added = false;
         for (final Field field : o.getClass().getDeclaredFields()) {
-            if (field.getType().equals(Link.class)) {
+            if (field.getType().equals(Subscriber.class) && field.isAnnotationPresent(Subscribed.class)) {
                 try {
                     field.setAccessible(true);
-                    final Link<?> link = (Link<?>) field.get(o);
-                    final Class<? extends Event> reifiedClass = LambdaUtils.getLambdaTarget(link);
+                    final Subscriber<?> sub = (Subscriber<?>) field.get(o);
+                    final Class<? extends Event> reifiedClass = LambdaUtils.getLambdaTarget(sub);
                     if (reifiedClass.equals(e)) {
-                        this.classLinkMap.computeIfAbsent(reifiedClass, l -> new PriorityBlockingQueue<>()).offer(new LinkData<>(
-                                link,
+                        this.classsubMap.computeIfAbsent(reifiedClass, l -> new SubscriberList()).add(new SubscriptionData<>(
+                                sub,
                                 reifiedClass,
                                 findPriority(field),
                                 findFilters(field))
@@ -57,13 +55,16 @@ public final class LambusImpl implements Lambus {
         Objects.requireNonNull(o);
         boolean removed = false;
         for (final Field field : o.getClass().getDeclaredFields()) {
-            if (field.getType().equals(Link.class)) {
+            if (field.getType().equals(Subscriber.class) && field.isAnnotationPresent(Subscribed.class)) {
                 try {
                     field.setAccessible(true);
-                    final Link<?> link = (Link<?>) field.get(o);
-                    final Class<? extends Event> reifiedClass = LambdaUtils.getLambdaTarget(link);
+                    final Subscriber<?> sub = (Subscriber<?>) field.get(o);
+                    final Class<? extends Event> reifiedClass = LambdaUtils.getLambdaTarget(sub);
                     if (reifiedClass.equals(e)) {
-                        removed |= classLinkMap.get(reifiedClass).removeIf(linkData -> linkData.getLink() == link);
+                        final SubscriberList subs = classsubMap.get(reifiedClass);
+                        if (sub != null) {
+                            removed |= subs.removeIf(subData -> subData.getSubscriber() == sub);
+                        }
                     }
                 } catch (IllegalAccessException | SecurityException ex) {
                     ex.printStackTrace();
@@ -75,34 +76,39 @@ public final class LambusImpl implements Lambus {
     }
 
     @Override
-    public <T extends Event> Link<T> subscribeDirect(Link<T> link) {
-        final Class<? extends Event> reifiedClass = LambdaUtils.getLambdaTarget(link);
-        this.classLinkMap.computeIfAbsent(reifiedClass, l -> new PriorityBlockingQueue<>()).offer(new LinkData<>(
-                link,
+    public <T extends Event> Subscriber<T> subscribeDirect(Subscriber<T> sub) {
+        final Class<? extends Event> reifiedClass = LambdaUtils.getLambdaTarget(sub);
+        this.classsubMap.computeIfAbsent(reifiedClass, l -> new SubscriberList()).add(new SubscriptionData<>(
+                sub,
                 reifiedClass,
                 Priority.NORMAL,
                 null)
         );
-        return link;
+        return sub;
     }
 
     @Override
-    public boolean unsubscribeDirect(Link<?> link) {
-        return classLinkMap.get(LambdaUtils.getLambdaTarget(link)).removeIf(linkData -> linkData.getLink() == link);
+    public boolean unsubscribeDirect(Subscriber<?> sub) {
+        boolean removed = false;
+        final SubscriberList subs = classsubMap.get(LambdaUtils.getLambdaTarget(sub));
+        if (subs != null) {
+            removed = subs.removeIf(subData -> subData.getSubscriber() == sub);
+        }
+        return removed;
     }
 
     @Override
-    public boolean subscribeAll(Object o) {
+    public boolean subscribe(Object o) {
         Objects.requireNonNull(o);
         boolean added = false;
         for (final Field field : o.getClass().getDeclaredFields()) {
-            if (field.getType().equals(Link.class)) {
+            if (field.getType().equals(Subscriber.class) && field.isAnnotationPresent(Subscribed.class)) {
                 try {
                     field.setAccessible(true);
-                    final Link<?> link = (Link<?>) field.get(o);
-                    final Class<? extends Event> reifiedClass = LambdaUtils.getLambdaTarget(link);
-                    this.classLinkMap.computeIfAbsent(reifiedClass, l -> new PriorityBlockingQueue<>()).offer(new LinkData<>(
-                            link,
+                    final Subscriber<?> sub = (Subscriber<?>) field.get(o);
+                    final Class<? extends Event> reifiedClass = LambdaUtils.getLambdaTarget(sub);
+                    this.classsubMap.computeIfAbsent(reifiedClass, l -> new SubscriberList()).add(new SubscriptionData<>(
+                            sub,
                             reifiedClass,
                             findPriority(field),
                             findFilters(field))
@@ -117,14 +123,14 @@ public final class LambusImpl implements Lambus {
     }
 
     @Override
-    public boolean unsubscribeAll(Object o) {
+    public boolean unsubscribe(Object o) {
         Objects.requireNonNull(o);
         boolean removed = false;
         for (final Field field : o.getClass().getDeclaredFields()) {
-            if (field.getType().equals(Link.class)) {
+            if (field.getType().equals(Subscriber.class) && field.isAnnotationPresent(Subscribed.class)) {
                 try {
                     field.setAccessible(true);
-                    removed |= unsubscribeDirect((Link<?>) field.get(o));
+                    removed |= unsubscribeDirect((Subscriber<?>) field.get(o));
                 } catch (IllegalAccessException | SecurityException ex) {
                     ex.printStackTrace();
                     return false;
@@ -138,16 +144,16 @@ public final class LambusImpl implements Lambus {
     @SuppressWarnings("unchecked")
     public <T extends Event> T post(T event) {
         Objects.requireNonNull(event);
-        final Queue<LinkData> list = classLinkMap.get(event.getClass());
+        final SubscriberList list = classsubMap.get(event.getClass());
         if (list != null) {
-            for (LinkData link : list) {
-                final Link<T> castLink = (Link<T>) link.getLink();
-                if (link.getFilters() != null) {
-                    for (Filter<T> f : link.getFilters()) {
-                        if (!f.test(castLink, event)) return event;
+            OUTER: for (SubscriptionData sub : list) {
+                final Subscriber<T> castSub = (Subscriber<T>) sub.getSubscriber();
+                if (sub.getFilters() != null) {
+                    for (Filter<T> f : sub.getFilters()) {
+                        if (!f.test(castSub, event)) continue OUTER;
                     }
                 }
-                castLink.invoke(event);
+                castSub.invoke(event);
             }
         }
         return event;
@@ -155,11 +161,7 @@ public final class LambusImpl implements Lambus {
 
     private static Priority findPriority(Field field) {
         final Prioritized priorityAnnotation = field.getAnnotation(Prioritized.class);
-        Priority priority = Priority.NORMAL;
-        if (priorityAnnotation != null) {
-            priority = priorityAnnotation.value();
-        }
-        return priority;
+        return priorityAnnotation != null ? priorityAnnotation.value() : Priority.NORMAL;
     }
 
     private static Filter[] findFilters(Field field) {
@@ -176,44 +178,6 @@ public final class LambusImpl implements Lambus {
             }
         }
         return filters;
-    }
-
-    static class LinkData<T extends Event> implements Comparable<LinkData> {
-        private final Link<T> link;
-        private final Class<? extends Event> clazz;
-        private final Priority priority;
-        private final Filter[] filters;
-
-        LinkData(Link<T> link,
-                 Class<? extends Event> clazz,
-                 Priority priority,
-                 Filter[] filters) {
-            this.link = link;
-            this.clazz = clazz;
-            this.priority = priority;
-            this.filters = filters;
-        }
-
-        Link<T> getLink() {
-            return this.link;
-        }
-
-        Class<? extends Event> getEventClass() {
-            return this.clazz;
-        }
-
-        Priority getPriority() {
-            return this.priority;
-        }
-
-        Filter[] getFilters() {
-            return this.filters;
-        }
-
-        @Override
-        public int compareTo(LinkData o) {
-            return Priority.HIGHEST.ordinal() - o.getPriority().ordinal();
-        }
     }
 
 }

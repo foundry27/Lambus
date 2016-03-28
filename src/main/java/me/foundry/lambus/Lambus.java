@@ -8,17 +8,17 @@ import me.foundry.lambus.event.Event;
 
 public interface Lambus {
 
+    boolean subscribe(Object o);
+
+    boolean unsubscribe(Object o);
+
     boolean subscribe(Class<? extends Event> e, Object o);
 
     boolean unsubscribe(Class<? extends Event> e, Object o);
 
-    <T extends Event> Link<T> subscribeDirect(Link<T> link);
+    <T extends Event> Subscriber<T> subscribeDirect(Subscriber<T> link);
 
-    boolean unsubscribeDirect(Link<?> link);
-
-    boolean subscribeAll(Object o);
-
-    boolean unsubscribeAll(Object o);
+    boolean unsubscribeDirect(Subscriber<?> link);
 
     <T extends Event> T post(T event);
 }

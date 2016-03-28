@@ -9,6 +9,6 @@ import java.io.Serializable;
  */
 
 @FunctionalInterface
-public interface Link<T extends Event> extends Serializable {
+public interface Subscriber<T extends Event> extends Serializable {
     void invoke(T event);
 }
