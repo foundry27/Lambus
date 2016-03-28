@@ -1,4 +1,4 @@
-import me.foundry.lambus.Link;
+import me.foundry.lambus.Subscriber;
 import me.foundry.lambus.event.Event;
 import me.foundry.lambus.filter.Filter;
 
@@ -7,7 +7,7 @@ import me.foundry.lambus.filter.Filter;
  */
 public class AlwaysFalseFilter<T extends Event> implements Filter<T> {
     @Override
-    public boolean test(Link<T> link, T event) {
+    public boolean test(Subscriber<T> link, T event) {
         return false;
     }
 }

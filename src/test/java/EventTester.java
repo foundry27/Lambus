@@ -1,5 +1,6 @@
 import me.foundry.lambus.Lambus;
-import me.foundry.lambus.Link;
+import me.foundry.lambus.Subscribed;
+import me.foundry.lambus.Subscriber;
 import me.foundry.lambus.internal.LambusImpl;
 import me.foundry.lambus.priority.Prioritized;
 import me.foundry.lambus.priority.Priority;
@@ -15,7 +16,7 @@ public class EventTester {
     private final Lambus bus = new LambusImpl();
 
     public void testDispatchTime() {
-        Link<BasicEvent> link = bus.subscribeDirect((BasicEvent e) -> {});
+        Subscriber<BasicEvent> link = bus.subscribeDirect((BasicEvent e) -> {});
         final long last = bean.getCurrentThreadCpuTime();
 
         for (int i = 0; i < 100000000; i++) {
@@ -28,46 +29,55 @@ public class EventTester {
         System.out.println(current);
     }
 
+    @Subscribed
     @Prioritized(Priority.LOWEST)
-    private Link<BasicEvent> onBasicEventLow = (e) -> {
-        System.out.println("Low Priority!");
-    };
+    private Subscriber<BasicEvent> onBasicEventLowest    = (e) -> System.out.println("Lowest Priority");
 
-    private Link<BasicEvent> onBasicEventNormal = (e) -> {
-        System.out.println("Normal Priority");
-    };
+    @Subscribed
+    @Prioritized(Priority.LOW)
+    private Subscriber<BasicEvent> onBasicEventLow       = (e) -> System.out.println("Low Priority");
 
+    @Subscribed
+    @Prioritized(Priority.NORMAL)
+    private Subscriber<BasicEvent> onBasicEventNormal    = (e) -> System.out.println("Normal Priority");
+
+    @Subscribed
+    @Prioritized(Priority.HIGH)
+    private Subscriber<BasicEvent> onBasicEventHigh      = (e) -> System.out.println("High Priority");
+
+    @Subscribed
     @Prioritized(Priority.HIGHEST)
-    private Link<BasicEvent> onBasicEventHigh = (e) -> {
-        System.out.println("High Priority");
-    };
+    private Subscriber<BasicEvent> onBasicEventHighest   = (e) -> System.out.println("Highest Priority");
 
     public void testPriorityHandling() {
-        bus.subscribeAll(this);
+        for (int i = 0; i < 5; i++) {
+            bus.subscribe(this);
+        }
         bus.post(new BasicEvent());
-        bus.unsubscribeAll(this);
+        bus.unsubscribe(this);
     }
 
     public void testSubscriptionTime() {
         long last = bean.getCurrentThreadCpuTime();
         for (int i = 0; i < 100000; i++) {
-            bus.subscribeAll(this);
+            bus.subscribe(this);
         }
         final long current = bean.getCurrentThreadCpuTime() - last;
-        bus.unsubscribeAll(this);
+        bus.unsubscribe(this);
         System.out.println(current);
 
     }
 
     public void testUnsubscription() {
-        bus.subscribeAll(this);
+        bus.subscribe(this);
         bus.post(new BasicEvent());
-        bus.unsubscribeAll(this);
+        bus.unsubscribe(this);
         bus.post(new BasicEvent());
     }
 
     public void testConstruction() {
-        bus.subscribeDirect((BasicEvent e) -> {});
+        bus.subscribeDirect((BasicEvent e) -> System.out.println("dank memes"));
+        bus.post(new BasicEvent());
     }
 
 }

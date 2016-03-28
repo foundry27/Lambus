@@ -1,6 +1,6 @@
 package me.foundry.lambus.internal.util;
 
-import me.foundry.lambus.Link;
+import me.foundry.lambus.Subscriber;
 import me.foundry.lambus.event.Event;
 
 import java.lang.invoke.SerializedLambda;
@@ -15,7 +15,7 @@ public final class LambdaUtils {
     }
 
     @SuppressWarnings("unchecked")
-    public static <T extends Event> Class<T> getLambdaTarget(Link<T> link) {
+    public static <T extends Event> Class<T> getLambdaTarget(Subscriber<T> link) {
         return (Class<T>) getLambdaMethod(getSerializedLambda(link)).getParameterTypes()[0];
     }
 
